@@ -10,7 +10,7 @@ import SwiftUI
 final class AppModel: ObservableObject {
     // Settings
     @Published var isOn = false { didSet { isOn ? startAudio() : stopAudio() } }
-    @Published var mode: SpatialMode = .speakers { didSet { modeChanged() } }
+    @Published var mode: SpatialMode = .tracked { didSet { modeChanged() } }
     @Published var width: Double = 30 { didSet { renderer?.setWidth(width) } }
     @Published var room: Double = 0.15 { didSet { renderer?.setRoom(Float(room)) } }
     @Published var predictionMs: Double = 0
@@ -43,6 +43,18 @@ final class AppModel: ObservableObject {
         camera.onPose = { [poseStore] pose, t in poseStore.update(pose, at: t) }
         outputName = SystemAudioTap.defaultOutputDeviceName()
         watchDefaultOutput()
+
+        // Hidden diagnostic: `open HeadTrack.app --args --diagnose` starts the
+        // camera at launch so head pose can be logged without clicking.
+        if CommandLine.arguments.contains("--diagnose") {
+            let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/HeadTrack")
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent("pose.csv")
+            FileManager.default.createFile(atPath: url.path, contents: Data("time,yaw,visionPitch,roll,noseRatio,landmarkPitch\n".utf8))
+            camera.diagnosticsFile = try? FileHandle(forWritingTo: url)
+            camera.diagnosticsFile?.seekToEndOfFile()
+            Task { await startCamera() }
+        }
     }
 
     // MARK: Audio pipeline
@@ -63,6 +75,9 @@ final class AppModel: ObservableObject {
             outputName = SystemAudioTap.defaultOutputDeviceName()
             status = "On: \(mode.label)"
             startTimer()
+            if mode == .tracked && !cameraOn {
+                Task { await startCamera() }
+            }
         } catch {
             stopAudio()
             self.error = "Couldn't start audio: \(error.localizedDescription). " +
@@ -79,11 +94,17 @@ final class AppModel: ObservableObject {
         configObserver = nil
         latencyMs = nil
         status = "Off"
-        if !cameraOn { stopTimer() }
+        // Off means off: release the camera too (green light goes out).
+        if cameraOn && !restarting { stopCamera() }
+        stopTimer()
     }
+
+    private var restarting = false
 
     private func restartAudio() {
         guard isOn else { return }
+        restarting = true
+        defer { restarting = false }
         stopAudio()
         startAudio()
     }
@@ -140,8 +161,7 @@ final class AppModel: ObservableObject {
     func stopCamera() {
         camera.stop()
         cameraOn = false
-        poseStore.reset()
-        if mode == .tracked { mode = .speakers }
+        poseStore.reset() // sound eases back to centre and stays there
         if !isOn { stopTimer() }
     }
 

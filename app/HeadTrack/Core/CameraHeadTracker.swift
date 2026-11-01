@@ -1,4 +1,5 @@
 import AVFoundation
+import Synchronization
 import Vision
 import os
 
@@ -34,12 +35,21 @@ final class CameraHeadTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDel
 
     func start() throws {
         if !configured { try configure() }
-        queue.async { [session] in session.startRunning() }
+        active.withLock { $0 = true }
+        queue.async { [session] in
+            if !session.isRunning { session.startRunning() }
+        }
     }
 
+    /// Stops processing immediately and releases the camera (green light off).
     func stop() {
-        queue.async { [session] in session.stopRunning() }
+        active.withLock { $0 = false }
+        queue.async { [session] in
+            if session.isRunning { session.stopRunning() }
+        }
     }
+
+    private let active = Mutex(false)
 
     private func configure() throws {
         let discovery = AVCaptureDevice.DiscoverySession(
@@ -84,13 +94,15 @@ final class CameraHeadTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDel
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
-        guard let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        guard active.withLock({ $0 }),
+              let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let time = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
 
         let request = VNDetectFaceRectanglesRequest()
         request.revision = VNDetectFaceRectanglesRequestRevision3
+        let landmarks = VNDetectFaceLandmarksRequest()
         do {
-            try sequenceHandler.perform([request], on: pixels, orientation: .up)
+            try sequenceHandler.perform([request, landmarks], on: pixels, orientation: .up)
         } catch {
             log.error("Vision failed: \(error.localizedDescription)")
             return
@@ -108,11 +120,64 @@ final class CameraHeadTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDel
 
         // Vision angles are radians. Signs are converted to our convention
         // (yaw > 0 = turned left, pitch > 0 = looking up) in poseFromVision.
+        // Vision's own pitch turned out to follow left/right turns on a real
+        // face (corr -0.55 with yaw over 211 samples), so up/down comes from
+        // facial landmarks instead (corr -0.10 with yaw).
+        let ratio = (landmarks.results?.first).flatMap(Self.noseRatio)
+        pitchLock.withLock { _pitchAvailable = ratio != nil }
+        let landmarkPitch = ratio.map(Self.pitchFromNoseRatio) ?? 0
         let pitch = face.pitch?.doubleValue
-        pitchLock.withLock { _pitchAvailable = pitch != nil }
-        let pose = Self.poseFromVision(yaw: yaw, pitch: pitch ?? 0,
-                                       roll: face.roll?.doubleValue ?? 0)
+        let pose = Self.poseFromVision(yaw: yaw, pitch: 0, roll: face.roll?.doubleValue ?? 0)
+            .with(pitch: landmarkPitch)
+
+        // DIAGNOSTIC (temporary, --diagnose only): raw Vision angles vs a
+        // landmark-based up/down estimate, ~4 Hz, to compare on a real face.
+        if let file = diagnosticsFile {
+            let now = CACurrentMediaTime()
+            if now - lastDiagnostic > 0.25 {
+                lastDiagnostic = now
+                let d = 180 / Double.pi
+                let line = String(format: "%.2f,%.1f,%.1f,%.1f,%.3f,%.1f\n", now, yaw * d,
+                                  (pitch ?? .nan) * d, (face.roll?.doubleValue ?? .nan) * d,
+                                  ratio ?? .nan, landmarkPitch)
+                file.write(Data(line.utf8))
+            }
+        }
         onPose?(pose, time)
+    }
+
+    /// Set to log raw pose samples as CSV (time,yaw,pitch,roll,noseRatio).
+    var diagnosticsFile: FileHandle?
+
+    private var lastDiagnostic = 0.0
+
+    /// Where the nose tip sits between the eye line (0) and the mouth (1).
+    /// Changes with up/down tilt, barely with left/right turns.
+    static func noseRatio(_ face: VNFaceObservation) -> Double? {
+        guard let lm = face.landmarks,
+              let leftEye = lm.leftEye?.normalizedPoints, !leftEye.isEmpty,
+              let rightEye = lm.rightEye?.normalizedPoints, !rightEye.isEmpty,
+              let nose = lm.nose?.normalizedPoints, !nose.isEmpty,
+              let lips = lm.outerLips?.normalizedPoints, !lips.isEmpty else { return nil }
+        let mean = { (pts: [CGPoint]) in pts.map(\.y).reduce(0, +) / CGFloat(pts.count) }
+        let eyeY = (mean(leftEye) + mean(rightEye)) / 2
+        let mouthY = mean(lips)
+        let noseTipY = nose.map(\.y).min()! // lowest nose point (y is up)
+        let span = eyeY - mouthY
+        guard span > 0.01 else { return nil }
+        return Double((eyeY - noseTipY) / span)
+    }
+
+    /// Nose ratio -> pitch in degrees (> 0 = looking up).
+    /// Geometry: the nose tip sits ~2.5 cm in front of the eyes and the
+    /// eye-to-mouth span is ~7 cm, so tilting by θ shifts the ratio by about
+    /// 0.36·sin θ. Looking DOWN pushes the nose tip towards the mouth (ratio
+    /// up), so the sign is negative. The absolute offset doesn't matter: the
+    /// tracker auto-centres on the first frame.
+    static func pitchFromNoseRatio(_ ratio: Double) -> Double {
+        let neutral = 0.70, gain = 0.36
+        let s = max(-1, min(1, (ratio - neutral) / gain))
+        return -asin(s) * 180 / .pi
     }
 
     private let pitchLock = NSLock()

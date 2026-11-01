@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g. 0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag_name=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Test
+        run: |
+          xcodegen generate --quiet
+          xcodebuild -project HeadTrack.xcodeproj -scheme HeadTrack -configuration Debug \
+            -derivedDataPath build CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO DEVELOPMENT_TEAM="" test
+
+      - name: Build universal DMG
+        run: make dmg VERSION="${{ steps.version.outputs.version }}" BUILD_NUMBER="${{ github.run_number }}"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: HeadTrack v${{ steps.version.outputs.version }}
+          files: app/build/HeadTrack-v${{ steps.version.outputs.version }}.dmg
+          generate_release_notes: true
+          body: |
+            Head-tracked spatial audio for any headphones on macOS.
+
+            **Install with Homebrew**
+            ```
+            brew tap yusufk/tap
+            brew install --cask headtrack
+            ```
+
+            **Or download the DMG**, drag HeadTrack to Applications, then run once:
+            ```
+            xattr -cr /Applications/HeadTrack.app
+            ```
+            (The app is not notarised; this clears the "damaged" warning.)
+
+            Requires macOS 15 or later. On first use macOS asks for camera and
+            system audio recording permission.

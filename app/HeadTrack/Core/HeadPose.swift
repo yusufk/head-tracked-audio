@@ -8,6 +8,12 @@ struct Pose: Equatable {
     var yaw: Double = 0
     var pitch: Double = 0
     var roll: Double = 0
+
+    func with(pitch: Double) -> Pose {
+        var p = self
+        p.pitch = pitch
+        return p
+    }
 }
 
 /// One Euro filter (Casiez et al. 2012): smooths jitter when still, adds very

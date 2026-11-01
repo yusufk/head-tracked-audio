@@ -14,11 +14,29 @@ enum SpatialMode: String, CaseIterable, Identifiable {
     case tracked  // virtual speakers fixed to the screen
 
     var id: String { rawValue }
+
+    /// Modes offered in the UI. `.speakers` (virtual speakers without head
+    /// tracking) is kept for tests and A/B work but hidden: to a user it
+    /// sounds like a confusing half-way house.
+    static let userModes: [SpatialMode] = [.stereo, .tracked]
+
     var label: String {
         switch self {
-        case .stereo: "Stereo"
+        case .stereo: "Normal"
         case .speakers: "Speakers"
-        case .tracked: "Head tracked"
+        case .tracked: "Tracked"
+        }
+    }
+
+    /// One-line explanation shown under the mode picker.
+    var explanation: String {
+        switch self {
+        case .stereo:
+            "Ordinary headphone sound: it sits inside your head and turns with you. Switch to compare."
+        case .speakers:
+            "Virtual speakers in front of you, not following your head."
+        case .tracked:
+            "Sound comes from the screen, like real speakers. Turn your head and it stays put."
         }
     }
 }
