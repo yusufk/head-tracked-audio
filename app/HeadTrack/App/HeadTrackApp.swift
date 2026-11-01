@@ -200,81 +200,6 @@ private struct Radar: View {
     }
 }
 
-/// Side view for up/down only: your head in profile (facing the screen on the
-/// left) tilts with your pitch, and an UP/DOWN gauge on the right shows the
-/// angle. Nothing here moves when you turn left or right.
-private struct SideRadar: View {
-    @ObservedObject var model: AppModel
-
-    /// Gauge range: ±40° fills the bar.
-    private let range = 40.0
-
-    var body: some View {
-        Canvas { ctx, size in
-            let w = size.width, h = size.height
-            let cx = w * 0.55, cy = h / 2
-            let pitch = model.head.pitch
-            let color: Color = !model.tracking ? .orange : (model.usePitch ? .cyan : .gray)
-
-            ctx.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 8),
-                     with: .color(.black.opacity(0.25)))
-
-            // Screen, seen edge-on
-            var screen = Path()
-            screen.move(to: CGPoint(x: 8, y: cy - 26))
-            screen.addLine(to: CGPoint(x: 8, y: cy + 26))
-            ctx.stroke(screen, with: .color(.cyan.opacity(0.6)), lineWidth: 3)
-
-            // Speakers at ear level (L and R overlap from the side)
-            ctx.fill(Path(ellipseIn: CGRect(x: 18, y: cy - 4, width: 8, height: 8)),
-                     with: .color(model.isOn && !model.comparing ? .green : .gray))
-
-            // Level reference line
-            var level = Path()
-            level.move(to: CGPoint(x: 28, y: cy))
-            level.addLine(to: CGPoint(x: cx - 12, y: cy))
-            ctx.stroke(level, with: .color(.white.opacity(0.15)),
-                       style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-
-            // Head in profile: rotate so looking up lifts the nose.
-            var head = ctx
-            head.translateBy(x: cx, y: cy)
-            head.rotate(by: .degrees(pitch)) // + = clockwise on screen = nose up (facing left)
-            var gaze = Path()
-            gaze.move(to: CGPoint(x: -12, y: 0))
-            gaze.addLine(to: CGPoint(x: -cx + 30, y: 0))
-            head.stroke(gaze, with: .color(color.opacity(0.7)),
-                        style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-            head.fill(Path(ellipseIn: CGRect(x: -11, y: -12, width: 22, height: 24)), with: .color(color))
-            var nose = Path()
-            nose.move(to: CGPoint(x: -10, y: -4))
-            nose.addLine(to: CGPoint(x: -17, y: 2))
-            nose.addLine(to: CGPoint(x: -10, y: 4))
-            nose.closeSubpath()
-            head.fill(nose, with: .color(color))
-            // Ear (marks the side of the head)
-            head.fill(Path(ellipseIn: CGRect(x: 1, y: -3, width: 5, height: 7)),
-                      with: .color(.black.opacity(0.35)))
-
-            // UP / DOWN gauge
-            let gx = w - 16, top = 16.0, bottom = h - 16
-            var bar = Path()
-            bar.move(to: CGPoint(x: gx, y: top))
-            bar.addLine(to: CGPoint(x: gx, y: bottom))
-            ctx.stroke(bar, with: .color(.white.opacity(0.3)), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-            var mid = Path()
-            mid.move(to: CGPoint(x: gx - 5, y: cy))
-            mid.addLine(to: CGPoint(x: gx + 5, y: cy))
-            ctx.stroke(mid, with: .color(.white.opacity(0.4)), lineWidth: 1)
-            let t = max(-1, min(1, pitch / range))
-            let my = cy - t * (cy - top)
-            ctx.fill(Path(ellipseIn: CGRect(x: gx - 5, y: my - 5, width: 10, height: 10)), with: .color(color))
-            ctx.draw(Text("UP").font(.system(size: 8, weight: .semibold)), at: CGPoint(x: gx, y: 7))
-            ctx.draw(Text("DOWN").font(.system(size: 8, weight: .semibold)), at: CGPoint(x: gx, y: h - 7))
-        }
-    }
-}
-
 /// Press and hold to hear ordinary headphone sound; release to go back.
 /// VoiceOver users get a toggle action instead of press-and-hold.
 private struct CompareButton: View {
@@ -298,5 +223,47 @@ private struct CompareButton: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityAction { if model.isOn { model.comparing.toggle() } }
             .disabled(!model.isOn)
+    }
+}
+
+/// Up/down view, drawn in the same style as the left/right radar but seen
+/// from the side: screen on the left, speakers at ear level, and the head's
+/// arrow tilts up when you look up.
+private struct SideRadar: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Canvas { ctx, size in
+            let cx = size.width * 0.62, cy = size.height / 2, r = size.width * 0.48
+            ctx.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 8),
+                     with: .color(.black.opacity(0.25)))
+
+            // Screen (seen edge-on, in front of you)
+            var screen = Path()
+            screen.move(to: CGPoint(x: 8, y: cy - 26))
+            screen.addLine(to: CGPoint(x: 8, y: cy + 26))
+            ctx.stroke(screen, with: .color(.cyan.opacity(0.6)), lineWidth: 3)
+
+            // Speakers at ear level (left and right overlap from the side)
+            let on = model.isOn && !model.comparing
+            let s = CGPoint(x: cx - r * cos(model.width * .pi / 180), y: cy)
+            ctx.fill(Path(ellipseIn: CGRect(x: s.x - 5, y: s.y - 5, width: 10, height: 10)),
+                     with: .color(on ? .green : .gray))
+
+            // Head: arrow points at the screen and tilts with pitch.
+            // pitch > 0 (looking up) = clockwise on screen = arrow tip rises.
+            var head = ctx
+            head.translateBy(x: cx, y: cy)
+            head.rotate(by: .degrees(model.head.pitch))
+            let color: Color = !model.tracking ? .orange : (model.usePitch ? .cyan : .gray)
+            head.fill(Path(ellipseIn: CGRect(x: -9, y: -9, width: 18, height: 18)), with: .color(color))
+            var arrow = Path()
+            arrow.move(to: CGPoint(x: -9, y: 0))
+            arrow.addLine(to: CGPoint(x: -30, y: 0))
+            arrow.move(to: CGPoint(x: -24, y: -5))
+            arrow.addLine(to: CGPoint(x: -32, y: 0))
+            arrow.addLine(to: CGPoint(x: -24, y: 5))
+            head.stroke(arrow, with: .color(color), lineWidth: 2)
+        }
     }
 }
