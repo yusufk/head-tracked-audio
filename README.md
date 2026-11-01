@@ -5,6 +5,8 @@
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B-lightgrey)
 ![Apple Silicon and Intel](https://img.shields.io/badge/Apple%20Silicon%20%2B%20Intel-universal-lightgrey)
 
+![HeadTrack: sound that stays put when you turn your head](images/banner.png)
+
 **Head-tracked spatial audio for any headphones on macOS, using your webcam.**
 
 On headphones, sound is glued to your head: turn left and the whole mix turns
@@ -58,6 +60,8 @@ audio recording** permission.
 
 The panel shows two radars, one from above (left/right) and one from the
 side (up/down), so you can see exactly what the camera is tracking.
+
+<img src="images/panel.png" alt="HeadTrack menu bar panel with on/off switch, compare button, left/right and up/down radars, readouts and sliders" width="343">
 
 | Control | What it does |
 |---|---|
