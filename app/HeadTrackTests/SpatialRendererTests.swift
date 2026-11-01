@@ -21,13 +21,13 @@ private final class LeftToneSource: StereoFrameSource {
 
 final class SpatialRendererTests: XCTestCase {
     /// Render ~0.5 s and return output RMS for (left ear, right ear).
-    private func render(mode: SpatialMode, yaw: Double) throws -> (l: Float, r: Float) {
+    private func render(mode: SpatialMode, yaw: Double, pitch: Double = 0) throws -> (l: Float, r: Float) {
         let rate = 48_000.0
         let renderer = SpatialRenderer(source: LeftToneSource(rate: rate), sampleRate: rate)
         renderer.setRoom(0) // dry, so only direction affects levels
         try renderer.enableOfflineRendering()
         renderer.setMode(mode)
-        renderer.setHead(Pose(yaw: yaw))
+        renderer.setHead(Pose(yaw: yaw, pitch: pitch))
         try renderer.start()
         defer { renderer.stop() }
 
@@ -78,5 +78,36 @@ final class SpatialRendererTests: XCTestCase {
         let b = try render(mode: .speakers, yaw: 60)
         XCTAssertEqual(a.l, b.l, accuracy: 0.01)
         XCTAssertEqual(a.r, b.r, accuracy: 0.01)
+    }
+
+    func testListenerVectorsAreOrthonormal() {
+        for (yaw, pitch) in [(0.0, 0.0), (30, 0), (-45, 20), (60, -30), (0, 89)] {
+            let o = SpatialRenderer.listenerOrientation(yaw: yaw, pitch: pitch)
+            let f = o.forward, u = o.up
+            XCTAssertEqual(f.x * f.x + f.y * f.y + f.z * f.z, 1, accuracy: 1e-5)
+            XCTAssertEqual(u.x * u.x + u.y * u.y + u.z * u.z, 1, accuracy: 1e-5)
+            XCTAssertEqual(f.x * u.x + f.y * u.y + f.z * u.z, 0, accuracy: 1e-5, "yaw \(yaw) pitch \(pitch)")
+        }
+    }
+
+    func testListenerVectorDirections() {
+        let rest = SpatialRenderer.listenerOrientation(yaw: 0, pitch: 0)
+        XCTAssertEqual(rest.forward.z, -1, accuracy: 1e-6) // faces -Z
+        XCTAssertEqual(rest.up.y, 1, accuracy: 1e-6)
+
+        let left = SpatialRenderer.listenerOrientation(yaw: 90, pitch: 0)
+        XCTAssertEqual(left.forward.x, -1, accuracy: 1e-6) // turned left faces -X
+
+        let up = SpatialRenderer.listenerOrientation(yaw: 0, pitch: 30)
+        XCTAssertGreaterThan(up.forward.y, 0) // looking up
+        XCTAssertGreaterThan(up.up.z, 0)      // top of head tips back
+    }
+
+    func testPitchDoesNotSwapEars() throws {
+        // Looking up or down shouldn't move a left source into the right ear.
+        let down = try render(mode: .tracked, yaw: 0, pitch: -30)
+        let up = try render(mode: .tracked, yaw: 0, pitch: 30)
+        XCTAssertGreaterThan(down.l, down.r)
+        XCTAssertGreaterThan(up.l, up.r)
     }
 }

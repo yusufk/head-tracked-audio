@@ -66,6 +66,7 @@ struct OneEuroFilter {
 /// short-term prediction. Not thread-safe; wrap in `HeadPoseStore`.
 struct HeadPoseTracker {
     var invertYaw = false
+    var invertPitch = false
     var holdSeconds = 0.4
     var easeSeconds = 1.2
 
@@ -109,6 +110,7 @@ struct HeadPoseTracker {
     /// Returns `tracking == false` while the face is lost (easing to centre).
     func pose(at now: Double, ahead: Double = 0) -> (pose: Pose, tracking: Bool) {
         let sign = invertYaw ? -1.0 : 1.0
+        let pSign = invertPitch ? -1.0 : 1.0
         var yaw = current.yaw - offset.yaw
         var pitch = current.pitch - offset.pitch
         let roll = current.roll - offset.roll
@@ -116,7 +118,7 @@ struct HeadPoseTracker {
 
         guard hasSample, since <= holdSeconds else {
             let k = hasSample ? max(0, 1 - (since - holdSeconds) / easeSeconds) : 0
-            return (Pose(yaw: sign * yaw * k, pitch: pitch * k, roll: roll * k), false)
+            return (Pose(yaw: sign * yaw * k, pitch: pSign * pitch * k, roll: roll * k), false)
         }
 
         // Extrapolate with the filters' velocity. Capped so noise can't fling
@@ -126,7 +128,7 @@ struct HeadPoseTracker {
             yaw += yawFilter.velocity * horizon
             pitch += pitchFilter.velocity * horizon
         }
-        return (Pose(yaw: sign * yaw, pitch: pitch, roll: roll), true)
+        return (Pose(yaw: sign * yaw, pitch: pSign * pitch, roll: roll), true)
     }
 }
 
@@ -145,6 +147,11 @@ final class HeadPoseStore: @unchecked Sendable {
     var invertYaw: Bool {
         get { lock.withLock { tracker.invertYaw } }
         set { lock.withLock { tracker.invertYaw = newValue } }
+    }
+
+    var invertPitch: Bool {
+        get { lock.withLock { tracker.invertPitch } }
+        set { lock.withLock { tracker.invertPitch = newValue } }
     }
 
     func pose(at now: Double, ahead: Double = 0) -> (pose: Pose, tracking: Bool) {

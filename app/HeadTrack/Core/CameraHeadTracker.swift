@@ -108,10 +108,16 @@ final class CameraHeadTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDel
 
         // Vision angles are radians. Signs are converted to our convention
         // (yaw > 0 = turned left, pitch > 0 = looking up) in poseFromVision.
-        let pose = Self.poseFromVision(yaw: yaw, pitch: face.pitch?.doubleValue ?? 0,
+        let pitch = face.pitch?.doubleValue
+        pitchLock.withLock { _pitchAvailable = pitch != nil }
+        let pose = Self.poseFromVision(yaw: yaw, pitch: pitch ?? 0,
                                        roll: face.roll?.doubleValue ?? 0)
         onPose?(pose, time)
     }
+
+    private let pitchLock = NSLock()
+    private var _pitchAvailable = true
+    var pitchAvailable: Bool { pitchLock.withLock { _pitchAvailable } }
 
     /// Vision reports angles as seen in the (unmirrored) camera image.
     /// The camera faces you, so a positive image yaw is the subject turning to

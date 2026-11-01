@@ -184,15 +184,20 @@ final class SpatialRenderer {
 
     private func applyHead() {
         let tracked = mode == .tracked
-        // AVAudio3DAngularOrientation yaw > 0 turns the listener to the RIGHT,
-        // the opposite of our Pose convention, so yaw is negated. Measured,
-        // not assumed: see SpatialRendererTests. Pitch sign is not yet
-        // verified, which is why "Use pitch" defaults to off.
-        environment.listenerAngularOrientation = AVAudio3DAngularOrientation(
-            yaw: tracked ? Float(-head.yaw) : 0,
-            pitch: tracked ? Float(head.pitch) : 0,
-            roll: 0
-        )
+        let o = Self.listenerOrientation(yaw: tracked ? head.yaw : 0, pitch: tracked ? head.pitch : 0)
+        environment.listenerVectorOrientation = AVAudio3DVectorOrientation(forward: o.forward, up: o.up)
+    }
+
+    /// Listener forward/up vectors for a head pose (degrees, yaw > 0 = left,
+    /// pitch > 0 = up). Vectors avoid any ambiguity in AVAudio's Euler angle
+    /// signs (its yaw turned out to be the opposite of our convention).
+    /// Listener at rest faces -Z with +Y up and +X to the right.
+    static func listenerOrientation(yaw: Double, pitch: Double) -> (forward: AVAudio3DVector, up: AVAudio3DVector) {
+        let a = Float(yaw * .pi / 180), p = Float(pitch * .pi / 180)
+        // Pitch about the listener's right axis, then yaw anticlockwise about +Y.
+        let forward = AVAudio3DVector(x: -sin(a) * cos(p), y: sin(p), z: -cos(a) * cos(p))
+        let up = AVAudio3DVector(x: sin(a) * sin(p), y: cos(p), z: cos(a) * sin(p))
+        return (forward, up)
     }
 
     private func updatePositions() {

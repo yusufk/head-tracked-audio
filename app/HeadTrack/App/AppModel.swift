@@ -14,14 +14,17 @@ final class AppModel: ObservableObject {
     @Published var width: Double = 30 { didSet { renderer?.setWidth(width) } }
     @Published var room: Double = 0.15 { didSet { renderer?.setRoom(Float(room)) } }
     @Published var predictionMs: Double = 0
-    @Published var usePitch = false
+    @Published var usePitch = true
     @Published var invertYaw = false { didSet { poseStore.invertYaw = invertYaw } }
+    @Published var invertPitch = false { didSet { poseStore.invertPitch = invertPitch } }
 
     // Readouts
     @Published private(set) var head = Pose()
     @Published private(set) var tracking = false
     @Published private(set) var cameraOn = false
     @Published private(set) var cameraFps = 0
+    /// False if Vision isn't reporting pitch for this camera/OS.
+    @Published private(set) var pitchAvailable = true
     @Published private(set) var latencyMs: Double?
     @Published private(set) var outputName = ""
     @Published private(set) var status = "Off"
@@ -165,17 +168,19 @@ final class AppModel: ObservableObject {
     private func tick() {
         let now = CACurrentMediaTime()
         let result = poseStore.pose(at: now, ahead: predictionMs / 1000)
-        var pose = result.pose
-        if !usePitch { pose.pitch = 0 }
-        renderer?.setHead(pose)
+        var applied = result.pose
+        if !usePitch { applied.pitch = 0 }
+        renderer?.setHead(applied)
 
-        head = pose
+        // Show the real head pose even when pitch isn't applied to the sound.
+        head = result.pose
         tracking = cameraOn && result.tracking
 
         // Slow-changing readouts at ~4 Hz.
         if now - lastReadout > 0.25 {
             lastReadout = now
             cameraFps = cameraOn ? camera.fps : 0
+            pitchAvailable = camera.pitchAvailable
             if let r = renderer {
                 let ringMs = Double(ring.availableFrames) / tap.sampleRate * 1000
                 latencyMs = r.outputLatency * 1000 + ringMs
