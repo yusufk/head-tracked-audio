@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import Combine
 import CoreAudio
@@ -48,11 +49,21 @@ final class AppModel: ObservableObject {
 
         // Hidden diagnostic: `open HeadTrack.app --args --diagnose` starts the
         // camera at launch so head pose can be logged without clicking.
+        if CommandLine.arguments.contains("--benchmark") {
+            let url = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Logs/HeadTrack/benchmark.txt")
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            FileManager.default.createFile(atPath: url.path, contents: Data("HeadTrack Vision benchmark\n".utf8))
+            camera.benchmarkFile = try? FileHandle(forWritingTo: url)
+            camera.benchmarkFile?.seekToEndOfFile()
+            Task { await startCamera() }
+        }
+
         if CommandLine.arguments.contains("--diagnose") {
             let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/HeadTrack")
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let url = dir.appendingPathComponent("pose.csv")
-            FileManager.default.createFile(atPath: url.path, contents: Data("time,yaw,visionPitch,roll,noseRatio,landmarkPitch\n".utf8))
+            FileManager.default.createFile(atPath: url.path, contents: Data("time,visionYaw,yaw,visionPitch,pitch,noseOffset,noseRatio,frameAgeMs\n".utf8))
             camera.diagnosticsFile = try? FileHandle(forWritingTo: url)
             camera.diagnosticsFile?.seekToEndOfFile()
             Task { await startCamera() }
@@ -169,6 +180,61 @@ final class AppModel: ObservableObject {
     }
 
     func recentre() { poseStore.recentre() }
+
+    // MARK: Calibration
+
+    @Published private(set) var isCalibrated = Calibration.load() != nil
+    private var calibrationSession: CalibrationSession?
+    private var calibrationWindow: NSWindow?
+
+    func startCalibration() async {
+        guard calibrationSession == nil else { return }
+        if !cameraOn { await startCamera() }
+        guard cameraOn else { return }
+
+        let session = CalibrationSession(camera: camera)
+        session.onFinish = { [weak self] cal in
+            guard let self else { return }
+            if cal != nil { self.isCalibrated = true }
+            self.poseStore.reset() // re-centre with the new mapping
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 400),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.title = "HeadTrack Calibration"
+        window.isReleasedWhenClosed = false
+        window.level = .floating
+        window.contentView = NSHostingView(rootView: CalibrationView(session: session) { [weak self] in
+            self?.endCalibration()
+        })
+        window.center()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+
+        calibrationSession = session
+        calibrationWindow = window
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window,
+                                               queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.endCalibration(closeWindow: false) }
+        }
+        session.start()
+    }
+
+    private func endCalibration(closeWindow: Bool = true) {
+        guard let session = calibrationSession else { return }
+        if case .step = session.phase { session.cancel() }
+        if case .intro = session.phase { session.cancel() }
+        calibrationSession = nil
+        if closeWindow { calibrationWindow?.close() }
+        calibrationWindow = nil
+    }
+
+    func resetCalibration() {
+        Calibration.clear()
+        camera.calibration.withLock { $0 = nil }
+        isCalibrated = false
+        poseStore.reset()
+    }
 
     // MARK: Update loop (60 Hz)
 

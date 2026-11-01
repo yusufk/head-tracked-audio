@@ -90,6 +90,25 @@ struct ControlPanel: View {
 
             Divider()
             HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.isCalibrated ? "Calibrated" : "Not calibrated")
+                        .font(.callout)
+                    Text(model.isCalibrated ? "Fast tracking (~26 updates/s)" : "Calibrate for faster tracking")
+                        .font(.caption)
+                        .foregroundStyle(model.isCalibrated ? Color.secondary : Color.orange)
+                }
+                Spacer()
+                Button(model.isCalibrated ? "Recalibrate…" : "Calibrate…") {
+                    Task { await model.startCalibration() }
+                }
+                if model.isCalibrated {
+                    Button("Reset") { model.resetCalibration() }
+                        .help("Forget the calibration and use the slower default tracking")
+                }
+            }
+
+            Divider()
+            HStack {
                 Button(model.cameraOn ? "Stop camera" : "Start camera") {
                     if model.cameraOn { model.stopCamera() } else { Task { await model.startCamera() } }
                 }
