@@ -7,7 +7,7 @@
 | Audio source | **Any audio** on the machine (system-wide) |
 | Platform | **macOS app** first |
 | Use case | **Screen as a window**: the sound stays anchored to the screen/room while you turn your head. Trigger example: a beach video that sounds flat because the waves turn with your head. |
-| Tracking | **Webcam face tracking**, same idea as Viki (`~/Development/web_graphics`) |
+| Tracking | **Webcam face tracking**, same idea as Viki ([yusufk/ai_mirror](https://github.com/yusufk/ai_mirror)) |
 | Headphones | **Wired and Bluetooth** |
 | Setting | **Desk** |
 

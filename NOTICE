@@ -1,0 +1,13 @@
+HeadTrack
+Copyright (C) 2026 Yusuf Kaka
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License version 3 as published by the Free
+Software Foundation. See LICENSE.
+
+Additional term under GPLv3 section 7(b):
+Any distributed copy or modified version of this program must retain this
+notice, and must credit the original author in a reasonably visible place
+(for example an About screen, README or project page) with the text:
+
+    Based on HeadTrack by Yusuf Kaka - https://github.com/yusufk/head-tracked-audio
