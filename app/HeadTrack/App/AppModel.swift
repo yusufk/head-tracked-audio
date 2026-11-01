@@ -11,6 +11,8 @@ final class AppModel: ObservableObject {
     // Settings
     @Published var isOn = false { didSet { isOn ? startAudio() : stopAudio() } }
     @Published var mode: SpatialMode = .tracked { didSet { modeChanged() } }
+    /// While true (button held), play plain stereo for an instant A/B.
+    @Published var comparing = false { didSet { renderer?.setMode(comparing ? .stereo : mode) } }
     @Published var width: Double = 30 { didSet { renderer?.setWidth(width) } }
     @Published var room: Double = 0.15 { didSet { renderer?.setRoom(Float(room)) } }
     @Published var predictionMs: Double = 0
@@ -87,6 +89,7 @@ final class AppModel: ObservableObject {
     }
 
     private func stopAudio() {
+        comparing = false
         renderer?.stop()
         renderer = nil
         tap.stop() // original output unmutes immediately

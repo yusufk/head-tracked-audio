@@ -28,20 +28,14 @@ struct ControlPanel: View {
                     .accessibilityLabel("Spatial audio on or off")
             }
 
-            Text(model.isOn ? "Output: \(model.outputName)" : "Off: your Mac's audio plays normally")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Picker("Mode", selection: $model.mode) {
-                ForEach(SpatialMode.userModes) { Text($0.label).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            Text(model.mode.explanation)
+            Text(model.isOn
+                 ? "Sound comes from the screen and stays put when you turn your head. Output: \(model.outputName)"
+                 : "Off: your Mac's audio plays normally")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            CompareButton(model: model)
 
             HStack(spacing: 10) {
                 VStack(spacing: 2) {
@@ -181,7 +175,7 @@ private struct Radar: View {
             ctx.stroke(screen, with: .color(.cyan.opacity(0.6)), lineWidth: 3)
 
             let w = model.width * .pi / 180
-            let on = model.mode != .stereo
+            let on = model.isOn && !model.comparing
             for (az, label) in [(w, "L"), (-w, "R")] {
                 let p = CGPoint(x: cx - sin(az) * r, y: cy - cos(az) * r)
                 ctx.fill(Path(ellipseIn: CGRect(x: p.x - 5, y: p.y - 5, width: 10, height: 10)),
@@ -233,7 +227,7 @@ private struct SideRadar: View {
 
             // Speakers at ear level (L and R overlap from the side)
             ctx.fill(Path(ellipseIn: CGRect(x: 18, y: cy - 4, width: 8, height: 8)),
-                     with: .color(model.mode != .stereo ? .green : .gray))
+                     with: .color(model.isOn && !model.comparing ? .green : .gray))
 
             // Level reference line
             var level = Path()
@@ -278,5 +272,31 @@ private struct SideRadar: View {
             ctx.draw(Text("UP").font(.system(size: 8, weight: .semibold)), at: CGPoint(x: gx, y: 7))
             ctx.draw(Text("DOWN").font(.system(size: 8, weight: .semibold)), at: CGPoint(x: gx, y: h - 7))
         }
+    }
+}
+
+/// Press and hold to hear ordinary headphone sound; release to go back.
+/// VoiceOver users get a toggle action instead of press-and-hold.
+private struct CompareButton: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Text(model.comparing ? "Playing normal sound…" : "Hold to compare with normal sound")
+            .font(.callout)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 6)
+                .fill(model.comparing ? Color.accentColor.opacity(0.35) : Color.secondary.opacity(0.15)))
+            .opacity(model.isOn ? 1 : 0.4)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { _ in if model.isOn && !model.comparing { model.comparing = true } }
+                .onEnded { _ in model.comparing = false })
+            .accessibilityElement()
+            .accessibilityLabel("Compare with normal sound")
+            .accessibilityValue(model.comparing ? "Playing normal sound" : "Playing spatial sound")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { if model.isOn { model.comparing.toggle() } }
+            .disabled(!model.isOn)
     }
 }
