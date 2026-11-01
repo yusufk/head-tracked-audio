@@ -1,0 +1,5 @@
+build/
+HeadTrack.xcodeproj/
+*.xcuserstate
+xcuserdata/
+.DS_Store
