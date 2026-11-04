@@ -45,6 +45,7 @@ targets:
         PRODUCT_NAME: HeadTrack
         PRODUCT_BUNDLE_IDENTIFIER: com.yusufk.headtrack
         COMBINE_HIDPI_IMAGES: true
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     scheme:
       testTargets:
         - HeadTrackTests
